@@ -1,0 +1,75 @@
+---
+title: "Practical Machine Learning Project"
+author: "Magnus Sigurdsson"
+date: "Thursday, August 13, 2015"
+output: html_document
+---
+# Introduction
+
+The goal of this project is to predict whether people perform barbell lifts correctly given various measures gathered from devices such as Jawbone Up, Fitbit, and Nike Fuelband, using data from [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har).
+
+# Exploratory Data Analysis
+
+Start by reading in our training and test data. I drop the first 7 columns in the dataset as they have irrelevant information such as the name of the person, time and date. It looks like the data came from excel, as some columns have the #DIV/0! error that is created in excel when dividing by zero. All columns except our classification column classe, are numeric columns. I therefore transform them all to numeric, as some column are read in as character due to the #DIV/0!. 
+
+```{r, warning = F}
+library(caret)
+trainingdata = read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testdata = read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+trainingdata = trainingdata[,-(1:7)]
+trainingdata[,colnames(trainingdata) != "classe"] = apply(trainingdata[,colnames(trainingdata) != "classe"],2,as.numeric)
+
+trainingdata = trainingdata[,colSums(is.na(trainingdata))/nrow(trainingdata) < 0.9]
+```
+
+There are `r length(sort((colSums(is.na(trainingdata))/nrow(trainingdata))[colSums(is.na(trainingdata))/nrow(trainingdata) > 0], decreasing = T))` predictor variables that have more than 90% of the data missing, I drop those columns as they can cause problems when using random forecast classification algorithm. There are no columns with near zero variance.
+
+A plot of correlations in the data shows that there are some variables that are highly correlated, which means we have a lot of redundant information. It will therefore be beneficial to use dimensionality reduction technique such as principal components analysis.
+```{r, warning = F}
+library(corrplot)
+corrplot(cor(trainingdata[,-ncol(trainingdata)]), order = "hclust")
+dev.off()
+```
+
+# Dimensionality Reduction
+
+Principal components analysis of the standardized data shows that there are `r which(summary(prcomp(trainingdata[,-ncol(trainingdata)], center = T, scale. = T))$importance[3,]>=0.95)[1]` principal components that explain 95% of the variation in the dataset. I will use those `r which(summary(prcomp(trainingdata[,-ncol(trainingdata)], center = T, scale. = T))$importance[3,]>=0.95)[1]`  principal components in order to simplify the model fitting, as the large number of columns can lead to long model fitting time, without much accuracy improvement as most columns are redundant.
+
+```{r, warning = F}
+plot(1:(ncol(trainingdata)-1),summary(prcomp(trainingdata[,-ncol(trainingdata)], center = T, scale. = T))$importance[3,], type = "l",
+     main = "Cumulative Proportion of Variance Explained \nby First X Principal Components",
+     ylab = "Cumulative % Explained", xlab = "Number of Principal Components")
+abline(h = 0.95, col = "red")
+```
+
+# Random Forest
+
+I will train a random forest classification model using principal compoments pre-processing. I will use a 4 fold cross validation to get an estimate of the out of sample error rate.
+```{r, warning = F}
+set.seed(1)
+rfmodel = train(classe ~ ., data = trainingdata, method = "rf", 
+                trControl = trainControl(method = "cv", number = 4), 
+                preProcess = "pca")
+# rfmodel = readRDS("randomforestmodel.rds")
+# saveRDS(rfmodel,"rfmgodel.")
+```
+
+The random forecast model has an out of sample error rate estimate of 1.59%, giving us the expected out of sample error rate.
+
+```{r, warning = F}
+print(rfmodel$finalModel)
+```
+
+# Prediction
+
+I use the fitted random forest model to predict 20 test cases for submission, the predictions are:
+```{r, warning = F}
+as.character(predict(rfmodel,testdata))
+```
+
+All these 20 test cases turned out to be correctly classified.
+
+# Summary
+I start with a dataset with large number of predictors, and use dimensionality reduction technique principal compoments analysis in order to simplify the problem. 
+I fit a random forest model using 4 fold cross validation and generate predictions with 1.59% out of sample prediction error according to cross validation. This prediction model allows me to predict the 20 test cases correctly.
